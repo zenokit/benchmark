@@ -1,0 +1,21 @@
+{
+  "name": "benchmarks",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.8",
+    "@types/autocannon": "^7.12.6",
+    "@types/express": "^5.0.0",
+    "autocannon": "^8.0.0",
+    "express": "^4.21.2",
+    "fastify": "^5.2.1",
+    "hono": "^4.7.2",
+    "zeno": "git+https://github.com/zenokit/zeno"
+  }
+}
