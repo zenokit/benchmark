@@ -1,5 +1,4 @@
 import { spawn, ChildProcess } from 'child_process';
-import autocannon, { type Result } from 'autocannon';
 import path from 'path';
 
 interface ServerConfig {
@@ -17,6 +16,16 @@ interface TestConfig {
   duration: number;
   body?: string;
   headers?: { [key: string]: string };
+}
+
+interface BombardierResult {
+  rps: {
+    mean: number;
+  };
+  latency: {
+    min: number;
+  };
+  duration: number;
 }
 
 function startServer(serverConfig: ServerConfig): Promise<ChildProcess> {
@@ -68,22 +77,67 @@ function stopServer(server: ChildProcess): Promise<void> {
   });
 }
 
-function runBenchmark(url: string, options: TestConfig): Promise<Result> {
+function runBenchmark(url: string, options: TestConfig): Promise<BombardierResult> {
   return new Promise((resolve, reject) => {
-    const instance = autocannon({
-      url,
-      method: options.method as any,
-      body: options.body,
-      headers: options.headers,
-      connections: 10000,
-      pipelining: options.pipelining,
-      duration: options.duration
-    }, (err, result) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(result);
+    const args = [
+      '-m', options.method,
+      '-c', options.connections.toString(),
+      '-d', `${options.duration}s`,
+      '--print', 'r',
+      '--format', 'json'
+    ];
+    
+    if (options.body) {
+      args.push('-b', options.body);
+    }
+    
+    if (options.headers) {
+      for (const [key, value] of Object.entries(options.headers)) {
+        args.push('-H', `${key}: ${value}`);
       }
+    }
+    
+    args.push(url);
+    
+    const bombardier = spawn('bombardier', args);
+    let output = '';
+    
+    bombardier.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+    
+    bombardier.stderr.on('data', (data) => {
+      console.error(`[bombardier]`, data.toString());
+    });
+    
+    bombardier.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`bombardier exited with code ${code}`));
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(output);
+        
+        const latencyInMs = result.result.latency.mean / 1000;
+        
+        resolve({
+          rps: {
+            mean: result.result.rps.mean
+          },
+          latency: {
+            min: latencyInMs
+          },
+          duration: result.result.timeTakenSeconds
+        });
+      } catch (err) {
+        console.error('Raw output:', output);
+        reject(new Error(`Failed to parse bombardier output: ${err}`));
+      }
+    });
+    
+    bombardier.on('error', (err) => {
+      reject(err);
     });
   });
 }
@@ -107,7 +161,7 @@ export async function runBenchmarks(servers: ServerConfig[], tests: TestConfig[]
         const url = `http://localhost:${server.port}${test.endpoint}`;
         const results = await runBenchmark(url, test);
         
-        const requestsPerSecond = Math.floor(results.requests.average);
+        const requestsPerSecond = Math.floor(results.rps.mean);
         const minLatency = results.latency.min.toFixed(2);
         const totalTime = results.duration.toFixed(2);
         
@@ -134,3 +188,4 @@ export async function runBenchmarks(servers: ServerConfig[], tests: TestConfig[]
     }
   }
 }
+
