@@ -118,7 +118,6 @@ function runBenchmark(url: string, options: TestConfig): Promise<BombardierResul
       
       try {
         const result = JSON.parse(output);
-        
         const latencyInMs = result.result.latency.mean / 1000;
         
         resolve({
